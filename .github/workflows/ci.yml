@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: gcc, cc: gcc, cxx: g++, preset: debug }
+          - { name: clang, cc: clang, cxx: clang++, preset: debug }
+          - { name: gcc + sanitizers, cc: gcc, cxx: g++, preset: asan }
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build g++ clang libgtest-dev python3-pytest redis-tools
+
+      - name: Configure
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: cmake --preset ${{ matrix.preset }} -DTINYREDIS_WERROR=ON
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Unit tests
+        run: ctest --preset ${{ matrix.preset }}
+
+      - name: End-to-end tests
+        env:
+          TINYREDIS_BIN: build/${{ matrix.preset }}/tinyredis-server
+        run: python3 -m pytest tests/e2e -v
+
+  format:
+    name: clang-format
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang-format
+      - run: find src tests -name '*.cpp' -o -name '*.hpp' | xargs clang-format --dry-run --Werror
