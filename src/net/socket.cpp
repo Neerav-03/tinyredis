@@ -2,22 +2,16 @@
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
 #include <cerrno>
 #include <stdexcept>
-#include <system_error>
+
+#include "util/system_error.hpp"
 
 namespace tinyredis::net {
-
-namespace {
-
-[[noreturn]] void throw_errno(const char* what) {
-  throw std::system_error(errno, std::generic_category(), what);
-}
-
-}  // namespace
 
 void Fd::reset(int fd) noexcept {
   if (fd_ >= 0) ::close(fd_);
@@ -32,9 +26,11 @@ Fd listen_tcp(const std::string& host, std::uint16_t port, int backlog) {
     throw std::invalid_argument("not an IPv4 address: " + host);
   }
 
+  // SOCK_NONBLOCK: accept() returns EAGAIN instead of blocking when nobody is
+  // waiting, which the event loop relies on.
   // SOCK_CLOEXEC: don't leak this descriptor into child processes (we fork() for
   // snapshots in a later milestone).
-  Fd sock(::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0));
+  Fd sock(::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
   if (!sock.valid()) throw_errno("socket");
 
   // Lets us restart the server right away instead of waiting out TIME_WAIT.
@@ -59,18 +55,10 @@ std::uint16_t local_port(const Fd& sock) {
   return ntohs(addr.sin_port);
 }
 
-bool write_all(int fd, std::string_view data) {
-  while (!data.empty()) {
-    // MSG_NOSIGNAL: a closed peer gives us EPIPE instead of killing the process
-    // with SIGPIPE.
-    ssize_t n = ::send(fd, data.data(), data.size(), MSG_NOSIGNAL);
-    if (n < 0) {
-      if (errno == EINTR) continue;
-      return false;
-    }
-    data.remove_prefix(static_cast<std::size_t>(n));
-  }
-  return true;
+void set_nodelay(int fd) {
+  // Best effort: if it fails we're only slower, not wrong.
+  int one = 1;
+  ::setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
 }
 
 }  // namespace tinyredis::net

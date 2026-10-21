@@ -13,8 +13,8 @@ a write-up in [`docs/learn/`](docs/learn/) explaining the systems concept behind
 |---|---|---|
 | 0 | Project setup: CMake, unit and end-to-end tests, sanitizers, CI | ✅ |
 | 1 | TCP server that answers `PING` | ✅ |
-| 2 | Single-threaded `epoll` event loop for many concurrent clients | ⏳ |
-| 3 | RESP protocol parser, pipelining, `GET` / `SET` / `DEL` / `EXISTS` | |
+| 2 | Single-threaded `epoll` event loop for many concurrent clients, backpressure, graceful shutdown | ✅ |
+| 3 | RESP protocol parser, pipelining, `GET` / `SET` / `DEL` / `EXISTS` | ⏳ |
 | 4 | Key expiry: `EXPIRE` / `TTL` / `SET … EX`, lazy and active expiration | |
 | 5 | Lists, hashes, sets, sorted sets (skip list) | |
 | 6 | Persistence: append-only file, log rewrite, `fork()` snapshots | |
@@ -56,6 +56,10 @@ redis-cli -p 6380 PING           # → PONG
 
 0. [What is Redis, and what are we building?](docs/learn/00-what-is-redis.md)
 1. [Sockets and TCP: our first server](docs/learn/01-sockets-and-tcp.md)
+2. [The event loop: one thread, thousands of clients](docs/learn/02-event-loop.md)
+
+Each milestone is tagged (`m1`, `m2`, …), so you can check out the code exactly as each note
+describes it.
 
 ## License
 

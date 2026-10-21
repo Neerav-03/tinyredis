@@ -10,4 +10,7 @@
 - Style: C++20, `.clang-format` (Google, 100 columns), RAII for every resource, no raw `new`/`delete`.
   Code lives in `namespace tinyredis::<module>`; everything except `main.cpp` goes into `tinyredis_core`.
 - Behaviour should match real Redis. When unsure, check against `redis-server`, which is installed in WSL.
-- Changes go through PRs; merge after CI is green. Update the README status table when a milestone lands.
+- Changes go through PRs; `main` is protected and needs the 4 CI checks green. When a milestone lands:
+  update the README status table, tag the merge commit `mN` (annotated) and push the tag. Learning notes
+  link to code at their own tag, so they stay accurate as the code moves on.
+- No performance numbers in the repo until the benchmark milestone measures them properly.

@@ -3,7 +3,10 @@
 **Goal of this milestone:** a process that listens on a TCP port and replies
 `+PONG` to anything it receives, enough for `redis-cli PING` to work.
 
-Code: [`src/net/socket.cpp`](../../src/net/socket.cpp), [`src/main.cpp`](../../src/main.cpp)
+Code as it was at the end of this milestone (tag `m1`):
+[`src/net/socket.cpp`](https://github.com/Neerav-03/tinyredis/blob/m1/src/net/socket.cpp),
+[`src/main.cpp`](https://github.com/Neerav-03/tinyredis/blob/m1/src/main.cpp).
+Check it out locally with `git checkout m1`; `git checkout main` takes you back.
 
 ## Everything is a file descriptor
 
@@ -74,7 +77,7 @@ Possible fixes:
    shared data.
 2. **An event loop**: one thread asks the kernel "which of my 10,000 sockets
    have data right now?" and serves only those. **This is what Redis does**, and
-   it's Milestone 2.
+   it's [Milestone 2](02-event-loop.md).
 
 ## Try it
 
@@ -91,7 +94,8 @@ printf 'PING\r\n' | nc -q1 localhost 6380   # → +PONG (the raw wire format)
 ```
 
 Then open two `redis-cli -p 6380` sessions at once and type `PING` in the second
-one. It hangs until you exit the first. That's the limitation above.
+one. It hangs until you exit the first. That's the limitation above. (This
+needs the `m1` version; from Milestone 2 on, both answer right away.)
 
 ## Interview questions you can now answer
 

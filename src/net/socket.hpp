@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <string>
-#include <string_view>
 #include <utility>
 
 namespace tinyredis::net {
@@ -37,7 +36,7 @@ class Fd {
   int fd_ = -1;
 };
 
-// Creates a TCP socket bound to `host:port` (IPv4) and starts listening.
+// Creates a non-blocking TCP socket bound to `host:port` (IPv4) and starts listening.
 // Port 0 lets the kernel pick a free port; read it back with local_port().
 // Throws std::invalid_argument for a bad address, std::system_error otherwise.
 Fd listen_tcp(const std::string& host, std::uint16_t port, int backlog = 128);
@@ -45,8 +44,8 @@ Fd listen_tcp(const std::string& host, std::uint16_t port, int backlog = 128);
 // Returns the local port a socket is bound to.
 std::uint16_t local_port(const Fd& sock);
 
-// Sends all of `data`, retrying short writes and EINTR.
-// Returns false if the peer has gone away.
-bool write_all(int fd, std::string_view data);
+// Disables Nagle's algorithm, so small replies go out immediately instead of
+// being held back to batch with later writes.
+void set_nodelay(int fd);
 
 }  // namespace tinyredis::net
