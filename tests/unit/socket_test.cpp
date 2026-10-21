@@ -2,12 +2,13 @@
 
 #include <fcntl.h>
 #include <gtest/gtest.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
 #include <cerrno>
 #include <stdexcept>
-#include <string>
 #include <system_error>
 
 namespace tinyredis::net {
@@ -71,27 +72,24 @@ TEST(ListenTcp, PortAlreadyInUseThrows) {
   EXPECT_THROW(listen_tcp("127.0.0.1", local_port(first)), std::system_error);
 }
 
-TEST(WriteAll, SendsEveryByte) {
-  int pair[2];
-  ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-  Fd writer(pair[0]);
-  Fd reader(pair[1]);
-
-  const std::string msg = "+PONG\r\n";
-  ASSERT_TRUE(write_all(writer.get(), msg));
-
-  char buf[16] = {};
-  ASSERT_EQ(::recv(reader.get(), buf, sizeof(buf), 0), static_cast<ssize_t>(msg.size()));
-  EXPECT_EQ(std::string(buf, msg.size()), msg);
+TEST(ListenTcp, ListenerIsNonBlocking) {
+  Fd sock = listen_tcp("127.0.0.1", 0);
+  EXPECT_TRUE(::fcntl(sock.get(), F_GETFL) & O_NONBLOCK);
+  // Nobody is connecting, so accept() must return right away instead of hanging.
+  EXPECT_EQ(::accept(sock.get(), nullptr, nullptr), -1);
+  EXPECT_TRUE(errno == EAGAIN || errno == EWOULDBLOCK);
 }
 
-TEST(WriteAll, ReturnsFalseWhenPeerIsGone) {
-  int pair[2];
-  ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-  Fd writer(pair[0]);
-  ::close(pair[1]);
+TEST(SetNodelay, EnablesTcpNodelay) {
+  Fd listener = listen_tcp("127.0.0.1", 0);
+  Fd client(::socket(AF_INET, SOCK_STREAM, 0));
+  ASSERT_TRUE(client.valid());
 
-  EXPECT_FALSE(write_all(writer.get(), "hello"));
+  set_nodelay(client.get());
+  int value = 0;
+  socklen_t len = sizeof(value);
+  ASSERT_EQ(::getsockopt(client.get(), IPPROTO_TCP, TCP_NODELAY, &value, &len), 0);
+  EXPECT_NE(value, 0);
 }
 
 }  // namespace

@@ -1,20 +1,22 @@
-// Milestone 1: a blocking TCP server that answers every request with +PONG.
-//
-// It serves one client at a time: while one client is connected, everyone else
-// waits. docs/learn/01-sockets-and-tcp.md explains why, and Milestone 2 replaces
-// this loop with an event loop.
+// tinyredis-server: a single-threaded server built on an epoll event loop.
+// See docs/learn/02-event-loop.md for how it works.
 
-#include <sys/socket.h>
+#include <sys/resource.h>
+#include <sys/signalfd.h>
+#include <unistd.h>
 
-#include <cerrno>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <exception>
 #include <string>
 #include <string_view>
 
+#include "net/event_loop.hpp"
 #include "net/socket.hpp"
+#include "server/server.hpp"
+#include "util/system_error.hpp"
 
 namespace net = tinyredis::net;
 
@@ -68,20 +70,30 @@ Options parse_args(int argc, char** argv) {
   return opts;
 }
 
-// Reads until the client hangs up. We don't parse requests yet (Milestone 3),
-// so each successful read gets exactly one PONG back.
-void serve_client(const net::Fd& client) {
-  char buf[4096];
-  for (;;) {
-    ssize_t n = ::recv(client.get(), buf, sizeof(buf), 0);
-    if (n == 0) return;  // client closed the connection
-    if (n < 0) {
-      if (errno == EINTR) continue;
-      std::perror("recv");
-      return;
-    }
-    if (!net::write_all(client.get(), "+PONG\r\n")) return;
+// Every client costs one file descriptor, and the default soft limit is often
+// just 1024. Like Redis, raise our soft limit as far as the hard limit allows.
+void raise_open_files_limit() {
+  rlimit limit{};
+  if (::getrlimit(RLIMIT_NOFILE, &limit) == 0 && limit.rlim_cur < limit.rlim_max) {
+    limit.rlim_cur = limit.rlim_max;
+    ::setrlimit(RLIMIT_NOFILE, &limit);
   }
+}
+
+// Turns SIGINT/SIGTERM into a readable file descriptor, so a shutdown request
+// is just another event in the loop instead of an interrupt that can land in
+// the middle of anything.
+net::Fd open_shutdown_signalfd() {
+  sigset_t mask;
+  sigemptyset(&mask);
+  sigaddset(&mask, SIGINT);
+  sigaddset(&mask, SIGTERM);
+  // Blocked signals aren't delivered the normal way; they wait for us to read
+  // them from the signalfd.
+  if (::sigprocmask(SIG_BLOCK, &mask, nullptr) < 0) tinyredis::throw_errno("sigprocmask");
+  net::Fd fd(::signalfd(-1, &mask, SFD_NONBLOCK | SFD_CLOEXEC));
+  if (!fd.valid()) tinyredis::throw_errno("signalfd");
+  return fd;
 }
 
 }  // namespace
@@ -92,20 +104,30 @@ int main(int argc, char** argv) {
   const Options opts = parse_args(argc, argv);
 
   try {
+    raise_open_files_limit();
+    net::Fd shutdown_signals = open_shutdown_signalfd();
+
+    net::EventLoop loop;
     net::Fd listener = net::listen_tcp(opts.bind, opts.port);
+    const unsigned port = net::local_port(listener);
+    tinyredis::server::Server server(loop, std::move(listener));
+
+    loop.add(shutdown_signals.get(), net::EventLoop::kReadable, [&](std::uint32_t) {
+      signalfd_siginfo info{};
+      if (::read(shutdown_signals.get(), &info, sizeof(info)) == sizeof(info)) {
+        std::printf("received %s, shutting down\n", strsignal(static_cast<int>(info.ssi_signo)));
+      }
+      loop.stop();
+    });
+
     // The e2e tests start us with --port 0 and read the real port from this line.
-    std::printf("tinyredis listening on %s:%u\n", opts.bind.c_str(),
-                static_cast<unsigned>(net::local_port(listener)));
+    std::printf("tinyredis listening on %s:%u\n", opts.bind.c_str(), port);
     std::fflush(stdout);
 
-    for (;;) {
-      net::Fd client(::accept4(listener.get(), nullptr, nullptr, SOCK_CLOEXEC));
-      if (!client.valid()) {
-        if (errno != EINTR) std::perror("accept");
-        continue;
-      }
-      serve_client(client);
-    }  // `client` is closed here, then we accept the next one
+    loop.run();
+    loop.remove(shutdown_signals.get());
+    std::printf("bye\n");
+    return 0;
   } catch (const std::exception& e) {
     std::fprintf(stderr, "fatal: %s\n", e.what());
     return 1;

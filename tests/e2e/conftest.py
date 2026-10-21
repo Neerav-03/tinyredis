@@ -4,6 +4,7 @@ import os
 import re
 import socket
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -12,9 +13,20 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_BIN = REPO_ROOT / "build" / "debug" / "tinyredis-server"
 
 
+@dataclass
+class ServerProcess:
+    host: str
+    port: int
+    proc: subprocess.Popen
+
+    @property
+    def address(self):
+        return (self.host, self.port)
+
+
 @pytest.fixture
 def server():
-    """Yields (host, port) of a fresh server listening on a free port."""
+    """Yields a fresh server listening on a free port."""
     binary = Path(os.environ.get("TINYREDIS_BIN", DEFAULT_BIN))
     if not binary.exists():
         pytest.fail(f"server binary not found at {binary}; build first or set TINYREDIS_BIN")
@@ -30,9 +42,10 @@ def server():
         match = re.search(r"listening on ([\d.]+):(\d+)", line)
         if not match:
             pytest.fail(f"unexpected startup output: {line!r}")
-        yield match.group(1), int(match.group(2))
+        yield ServerProcess(match.group(1), int(match.group(2)), proc)
     finally:
-        proc.terminate()
+        if proc.poll() is None:
+            proc.kill()
         proc.wait(timeout=5)
 
 
@@ -42,7 +55,7 @@ def connect(server):
     opened = []
 
     def _connect(timeout=2.0):
-        sock = socket.create_connection(server, timeout=timeout)
+        sock = socket.create_connection(server.address, timeout=timeout)
         opened.append(sock)
         return sock
 

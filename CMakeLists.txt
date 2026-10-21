@@ -23,7 +23,9 @@ endif()
 
 # Everything except main() lives in a library so the tests can link against it.
 add_library(tinyredis_core
+  src/net/event_loop.cpp
   src/net/socket.cpp
+  src/server/server.cpp
 )
 target_include_directories(tinyredis_core PUBLIC src)
 target_link_libraries(tinyredis_core PRIVATE tinyredis_warnings)
@@ -37,6 +39,7 @@ if(TINYREDIS_BUILD_TESTS)
   include(GoogleTest)
 
   add_executable(unit_tests
+    tests/unit/event_loop_test.cpp
     tests/unit/socket_test.cpp
   )
   target_link_libraries(unit_tests PRIVATE tinyredis_core tinyredis_warnings GTest::gtest_main)
